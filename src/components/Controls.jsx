@@ -17,14 +17,25 @@ export default function Controls({
     return (
         <div className="fixed top-4 left-4 z-50 flex flex-col gap-3">
             {/* Title bar */}
-            <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-white text-sm font-semibold tracking-wide">
-                    WAREHOUSE CCTV
-                </span>
-                <span className="text-gray-400 text-xs ml-2">
-                    SIMULATION
-                </span>
+            <div className="glass rounded-xl px-4 py-3 min-w-[290px]">
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-400/20 bg-slate-950/80">
+                            <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                        </div>
+                        <div className="min-w-0">
+                            <p className="truncate text-white text-sm font-semibold tracking-[0.18em]">
+                                WAREHOUSE CCTV
+                            </p>
+                            <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                                Live monitoring feed
+                            </p>
+                        </div>
+                    </div>
+                    <span className="shrink-0 text-[11px] uppercase tracking-[0.22em] text-gray-400">
+                        Simulation
+                    </span>
+                </div>
             </div>
 
             {/* Controls panel */}
