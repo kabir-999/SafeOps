@@ -202,7 +202,6 @@ export default function App() {
     const [fireAreas, setFireAreas] = useState({})
     const [ladderFallState, setLadderFallState] = useState({ trigger: 0, areaId: null })
     const [incidentNotifications, setIncidentNotifications] = useState([])
-    const [incidentAlarm, setIncidentAlarm] = useState(null)
     const [complianceTargets, setComplianceTargets] = useState({
         helmet: 100,
         vest: 100,
@@ -241,18 +240,6 @@ export default function App() {
 
         return () => window.clearTimeout(timeoutId)
     }, [incidentNotifications])
-
-    useEffect(() => {
-        if (!incidentAlarm) {
-            return undefined
-        }
-
-        const timeoutId = window.setTimeout(() => {
-            setIncidentAlarm(null)
-        }, 6800)
-
-        return () => window.clearTimeout(timeoutId)
-    }, [incidentAlarm])
 
     // Generate worker list based on count + current area + per-compliance targets.
     const workers = useMemo(() => {
@@ -354,8 +341,8 @@ export default function App() {
 
     const sendIncidentWebhook = async ({ eventType, severity, details, location, responderLabel }) => {
         pushIncidentNotification(
-            `${responderLabel} Pending`,
-            `Incident sent for ${location}. Waiting for n8n mail confirmation...`,
+            `${responderLabel} Alert`,
+            `Message dispatch has been initiated for ${location}.`,
             'info'
         )
 
@@ -377,39 +364,8 @@ export default function App() {
             if (!response.ok) {
                 throw new Error(`Webhook failed with status ${response.status}`)
             }
-
-            let responseMessage = ''
-            try {
-                const payload = await response.clone().json()
-                responseMessage = payload?.message ?? payload?.status ?? ''
-            } catch {
-                try {
-                    responseMessage = await response.text()
-                } catch {
-                    responseMessage = ''
-                }
-            }
-
-            const confirmedMessage = responseMessage
-                ? `${responderLabel} notified for ${location}. ${responseMessage}`
-                : `${responderLabel} has been notified for ${location} after n8n completed the mail step.`
-
-            pushIncidentNotification(
-                `${responderLabel} Notified`,
-                confirmedMessage,
-                'success'
-            )
-            setIncidentAlarm({
-                responderLabel,
-                location,
-                message: confirmedMessage,
-            })
         } catch (error) {
-            pushIncidentNotification(
-                'Webhook Error',
-                error.message || 'Unable to reach incident workflow.',
-                'error'
-            )
+            console.error('Incident webhook failed:', error)
         }
     }
 
@@ -507,22 +463,6 @@ export default function App() {
                             <p className="incident-toast-message">{notification.message}</p>
                         </div>
                     ))}
-                </div>
-            ) : null}
-
-            {incidentAlarm ? (
-                <div className="incident-banner-wrap pointer-events-none">
-                    <div className="incident-banner">
-                        <p className="incident-banner-eyebrow">
-                            Emergency Notification Confirmed
-                        </p>
-                        <p className="incident-banner-title">
-                            {incidentAlarm.responderLabel} notified for {incidentAlarm.location}
-                        </p>
-                        <p className="incident-banner-message">
-                            {incidentAlarm.message}
-                        </p>
-                    </div>
                 </div>
             ) : null}
 
