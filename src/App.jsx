@@ -5,6 +5,7 @@ import Worker from './components/Worker'
 import Controls from './components/Controls'
 
 const INCIDENT_WEBHOOK_URL = 'https://aagnya.app.n8n.cloud/webhook-test/incident-alert'
+const INCIDENT_DURATION_MS = 20000
 const PPE_ITEMS = [
     { key: 'helmet', label: 'Helmet' },
     { key: 'vest', label: 'Vest' },
@@ -53,6 +54,31 @@ const INCIDENT_SOURCES = {
 
 function buildIncidentNotification(id, title, message, tone = 'info') {
     return { id, title, message, tone }
+}
+
+function removeMapEntry(map, key) {
+    const next = { ...map }
+    delete next[key]
+    return next
+}
+
+function getFireHazardObstacles(areaId, active) {
+    if (!active) {
+        return []
+    }
+
+    const fireSource = INCIDENT_SOURCES[areaId]?.fire ?? INCIDENT_SOURCES.hub.fire
+    const [x, , z] = fireSource
+    const footprint = areaId === 'hub'
+        ? { width: 16, depth: 11 }
+        : { width: 12, depth: 9 }
+
+    return [{
+        minX: x - footprint.width / 2,
+        maxX: x + footprint.width / 2,
+        minZ: z - footprint.depth / 2,
+        maxZ: z + footprint.depth / 2,
+    }]
 }
 
 function getAssignmentScore(workerIndex, complianceKey) {
@@ -216,6 +242,19 @@ export default function App() {
     }, [selectedRoomIndex, roomCount])
 
     useEffect(() => {
+        const timeoutIds = Object.entries(fireAreas).map(([areaId, startedAt]) => {
+            const remaining = Math.max(0, INCIDENT_DURATION_MS - (Date.now() - startedAt))
+            return window.setTimeout(() => {
+                setFireAreas((prev) => (prev[areaId] === startedAt ? removeMapEntry(prev, areaId) : prev))
+            }, remaining)
+        })
+
+        return () => {
+            timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId))
+        }
+    }, [fireAreas])
+
+    useEffect(() => {
         if (!ladderFallState.trigger) {
             return undefined
         }
@@ -224,7 +263,7 @@ export default function App() {
             setLadderFallState((prev) =>
                 prev.trigger === ladderFallState.trigger ? { trigger: 0, areaId: null } : prev
             )
-        }, 3200)
+        }, INCIDENT_DURATION_MS)
 
         return () => window.clearTimeout(timeoutId)
     }, [ladderFallState])
@@ -241,10 +280,15 @@ export default function App() {
         return () => window.clearTimeout(timeoutId)
     }, [incidentNotifications])
 
+    const fireActive = Boolean(fireAreas[currentArea.id])
+
     // Generate worker list based on count + current area + per-compliance targets.
     const workers = useMemo(() => {
         const roomProfiles = getRoomWorkerProfiles(currentArea.id)
-        const obstacles = getAreaObstacles(currentArea.id)
+        const obstacles = [
+            ...getAreaObstacles(currentArea.id),
+            ...getFireHazardObstacles(currentArea.id, fireActive),
+        ]
         const workerIndexes = Array.from({ length: workerCount }, (_, index) => index)
         const complianceAssignments = Object.fromEntries(
             PPE_ITEMS.map(({ key }) => {
@@ -263,11 +307,11 @@ export default function App() {
             ...roomProfiles[i % roomProfiles.length],
             id: `P${i + 1}`,
             obstacles,
-            ppeConfig: Object.fromEntries(
-                PPE_ITEMS.map(({ key }) => [key, complianceAssignments[key].has(i)])
-            ),
-        }))
-    }, [workerCount, complianceTargets, currentArea.id])
+                ppeConfig: Object.fromEntries(
+                    PPE_ITEMS.map(({ key }) => [key, complianceAssignments[key].has(i)])
+                ),
+            }))
+    }, [workerCount, complianceTargets, currentArea.id, fireActive])
 
     const complianceSummary = useMemo(() => {
         return PPE_ITEMS.map(({ key, label }) => {
@@ -284,9 +328,8 @@ export default function App() {
     }, [workerCount, workers])
 
     const showSceneLabels = true
-    const fireActive = Boolean(fireAreas[currentArea.id])
     const ladderActive = ladderFallState.areaId === currentArea.id && ladderFallState.trigger > 0
-    const panicActive = fireActive || ladderActive
+    const incidentMode = fireActive ? 'fire' : ladderActive ? 'rescue' : 'none'
     const incidentSource = fireActive
         ? INCIDENT_SOURCES[currentArea.id]?.fire ?? INCIDENT_SOURCES.hub.fire
         : ladderActive
@@ -370,9 +413,10 @@ export default function App() {
     }
 
     const handleStartFire = () => {
+        const startedAt = Date.now()
         setFireAreas((prev) => ({
             ...prev,
-            [currentArea.id]: true,
+            [currentArea.id]: startedAt,
         }))
         void sendIncidentWebhook({
             eventType: 'fire',
@@ -440,7 +484,7 @@ export default function App() {
                         obstacles={w.obstacles}
                         ppeConfig={w.ppeConfig}
                         showLabel={showSceneLabels}
-                        panicActive={panicActive}
+                        incidentMode={incidentMode}
                         incidentSource={incidentSource}
                     />
                 ))}

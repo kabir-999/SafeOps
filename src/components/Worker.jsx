@@ -444,10 +444,94 @@ function pickPanicTargets(route, obstacles, incidentSource, workerIndex) {
     })
 }
 
+function pickResponseTargets(obstacles, incidentSource, workerIndex) {
+    const incidentPoint = toVector(incidentSource)
+    const radius = 2.1 + (workerIndex % 3) * 0.6
+    const angleOffset = (workerIndex % 8) * (Math.PI / 4)
+    const candidates = Array.from({ length: 8 }, (_, index) => {
+        const angle = angleOffset + index * (Math.PI / 4)
+        return new THREE.Vector3(
+            incidentPoint.x + Math.cos(angle) * radius,
+            0,
+            incidentPoint.z + Math.sin(angle) * radius
+        )
+    }).filter((point) => !isPointBlocked(point, obstacles, 1.05))
+
+    if (!candidates.length) {
+        return [[incidentPoint.x, 0, incidentPoint.z]]
+    }
+
+    const target = candidates[0]
+    return [[target.x, 0, target.z]]
+}
+
 function pathSegmentBlocked(start, end, obstacles) {
     return obstacles.some((obstacle) =>
         segmentIntersectsRect(start, end, expandObstacle(obstacle, OBSTACLE_CLEARANCE))
     )
+}
+
+function findBlockingObstacle(start, end, obstacles) {
+    return obstacles.find((obstacle) =>
+        segmentIntersectsRect(start, end, expandObstacle(obstacle, OBSTACLE_CLEARANCE))
+    )
+}
+
+function pathLength(points) {
+    let total = 0
+
+    for (let index = 1; index < points.length; index += 1) {
+        total += points[index - 1].distanceTo(points[index])
+    }
+
+    return total
+}
+
+function buildSideDetourPath(start, target, obstacles) {
+    const blockingObstacle = findBlockingObstacle(start, target, obstacles)
+
+    if (!blockingObstacle) {
+        return null
+    }
+
+    const expanded = expandObstacle(blockingObstacle, OBSTACLE_CLEARANCE + 0.4)
+    const direction = target.clone().sub(start)
+    const preferZDetour = Math.abs(direction.x) >= Math.abs(direction.z)
+    const candidateWaypointSets = preferZDetour
+        ? [
+            [
+                [start.x, 0, expanded.minZ - 0.35],
+                [target.x, 0, expanded.minZ - 0.35],
+            ],
+            [
+                [start.x, 0, expanded.maxZ + 0.35],
+                [target.x, 0, expanded.maxZ + 0.35],
+            ],
+        ]
+        : [
+            [
+                [expanded.minX - 0.35, 0, start.z],
+                [expanded.minX - 0.35, 0, target.z],
+            ],
+            [
+                [expanded.maxX + 0.35, 0, start.z],
+                [expanded.maxX + 0.35, 0, target.z],
+            ],
+        ]
+
+    const candidatePaths = candidateWaypointSets
+        .map((waypoints) => createNavigablePath([
+            [start.x, 0, start.z],
+            ...waypoints,
+            [target.x, 0, target.z],
+        ], obstacles))
+        .filter((candidatePath) =>
+            candidatePath.length > 1 &&
+            candidatePath.every((point) => !isPointBlocked(point, obstacles, 0.4))
+        )
+        .sort((a, b) => pathLength(a) - pathLength(b))
+
+    return candidatePaths[0] ?? null
 }
 
 export default function Worker({
@@ -459,7 +543,7 @@ export default function Worker({
     obstacles = [],
     ppeConfig,
     showLabel = true,
-    panicActive = false,
+    incidentMode = 'none',
     incidentSource = null,
 }) {
     const group = useRef()
@@ -476,14 +560,21 @@ export default function Worker({
     const gloveColor = useMemo(() => randomFrom(GLOVE_COLORS), [])
     const qrBadgeTexture = useMemo(() => createQrBadgeTexture(id), [id])
     const normalPath = useMemo(() => createNavigablePath(route, obstacles), [route, obstacles])
-    const panicRoute = useMemo(() => {
-        if (!panicActive || !incidentSource) {
+    const fireRoute = useMemo(() => {
+        if (incidentMode !== 'fire' || !incidentSource) {
             return route
         }
         return pickPanicTargets(route, obstacles, incidentSource, workerIndex)
-    }, [panicActive, incidentSource, obstacles, route, workerIndex])
-    const panicPath = useMemo(() => createNavigablePath(panicRoute, obstacles), [panicRoute, obstacles])
-    const activePath = panicActive ? panicPath : normalPath
+    }, [incidentMode, incidentSource, obstacles, route, workerIndex])
+    const responseRoute = useMemo(() => {
+        if (incidentMode !== 'rescue' || !incidentSource) {
+            return route
+        }
+        return pickResponseTargets(obstacles, incidentSource, workerIndex)
+    }, [incidentMode, incidentSource, obstacles, route, workerIndex])
+    const firePath = useMemo(() => createNavigablePath(fireRoute, obstacles), [fireRoute, obstacles])
+    const responsePath = useMemo(() => createNavigablePath(responseRoute, obstacles), [responseRoute, obstacles])
+    const activePath = incidentMode === 'fire' ? firePath : incidentMode === 'rescue' ? responsePath : normalPath
     const phaseOffset = useMemo(() => workerIndex * 0.47, [workerIndex])
     const baseMoveSpeed = useMemo(
         () => TASK_SPEEDS[taskType] * (0.92 + (workerIndex % 4) * 0.05),
@@ -497,7 +588,8 @@ export default function Worker({
     const motionState = useRef(activePath.length > 1 ? 'walking' : 'working')
 
     useEffect(() => {
-        const targetPath = panicActive ? panicPath : normalPath
+        const targetPath =
+            incidentMode === 'fire' ? firePath : incidentMode === 'rescue' ? responsePath : normalPath
         const currentPosition = positionRef.current.clone()
         const rebasedPath = sanitizePoints([currentPosition, ...targetPath.filter((point) => !almostSamePoint(point, currentPosition))])
 
@@ -506,16 +598,24 @@ export default function Worker({
             positionRef.current = rebasedPath[0].clone()
             waypointIndex.current = rebasedPath.length > 1 ? 1 : 0
             isPaused.current = rebasedPath.length <= 1
-            motionState.current = panicActive ? 'panic' : rebasedPath.length > 1 ? 'walking' : 'working'
+            motionState.current =
+                incidentMode === 'fire'
+                    ? 'panic'
+                    : incidentMode === 'rescue'
+                        ? 'response'
+                        : rebasedPath.length > 1
+                            ? 'walking'
+                            : 'working'
         }
-    }, [normalPath, panicActive, panicPath])
+    }, [firePath, incidentMode, normalPath, responsePath])
 
     useFrame(({ clock }, delta) => {
         const t = clock.getElapsedTime() * speed + phaseOffset
         const position = positionRef.current
         const path = currentPathRef.current
         const target = path[waypointIndex.current]
-        const moveSpeedMultiplier = panicActive ? 1.85 : 1
+        const moveSpeedMultiplier =
+            incidentMode === 'fire' ? 1.95 : incidentMode === 'rescue' ? 1.35 : 1
 
         if (group.current) {
             group.current.position.copy(position)
@@ -525,7 +625,14 @@ export default function Worker({
             if (isPaused.current) {
                 if (t >= pauseUntil.current) {
                     isPaused.current = false
-                    motionState.current = taskType === 'carry' ? 'carrying' : 'walking'
+                    motionState.current =
+                        incidentMode === 'fire'
+                            ? 'panic'
+                            : incidentMode === 'rescue'
+                                ? 'response'
+                                : taskType === 'carry'
+                                    ? 'carrying'
+                                    : 'walking'
                     waypointIndex.current = (waypointIndex.current + 1) % path.length
                 }
             } else if (target) {
@@ -534,18 +641,32 @@ export default function Worker({
 
                 if (distance < 0.14) {
                     isPaused.current = true
-                    pauseUntil.current = t + (panicActive ? 0.08 : TASK_PAUSES[taskType])
-                    motionState.current = panicActive ? 'panic' : 'working'
+                    pauseUntil.current = t + (incidentMode === 'fire' ? 0.08 : incidentMode === 'rescue' ? 0.18 : TASK_PAUSES[taskType])
+                    motionState.current = incidentMode === 'fire' ? 'panic' : 'working'
                 } else {
                     direction.normalize()
                     const step = Math.min(distance, baseMoveSpeed * moveSpeedMultiplier * speed * delta)
                     const nextPosition = position.clone().addScaledVector(direction, step)
 
                     if (pathSegmentBlocked(position, nextPosition, obstacles)) {
-                        waypointIndex.current = waypointIndex.current > 1 ? waypointIndex.current - 1 : (waypointIndex.current + 1) % path.length
-                        isPaused.current = true
-                        pauseUntil.current = t + 0.12
-                        motionState.current = panicActive ? 'panic' : 'walking'
+                        const detourPath = buildSideDetourPath(position, target, obstacles)
+
+                        if (detourPath) {
+                            const remainingPath = path.slice(waypointIndex.current + 1)
+                            currentPathRef.current = sanitizePoints([
+                                position.clone(),
+                                ...detourPath.slice(1),
+                                ...remainingPath,
+                            ])
+                            waypointIndex.current = currentPathRef.current.length > 1 ? 1 : 0
+                            isPaused.current = false
+                        } else {
+                            waypointIndex.current = waypointIndex.current > 1 ? waypointIndex.current - 1 : (waypointIndex.current + 1) % path.length
+                            isPaused.current = true
+                            pauseUntil.current = t + 0.12
+                        }
+
+                        motionState.current = incidentMode === 'fire' ? 'panic' : incidentMode === 'rescue' ? 'response' : 'walking'
                     } else {
                         position.copy(nextPosition)
                     }
@@ -554,7 +675,14 @@ export default function Worker({
                         group.current.rotation.y = Math.atan2(direction.x, direction.z)
                     }
 
-                    motionState.current = panicActive ? 'panic' : taskType === 'carry' ? 'carrying' : 'walking'
+                    motionState.current =
+                        incidentMode === 'fire'
+                            ? 'panic'
+                            : incidentMode === 'rescue'
+                                ? 'response'
+                                : taskType === 'carry'
+                                    ? 'carrying'
+                                    : 'walking'
                 }
             }
         }
@@ -570,13 +698,27 @@ export default function Worker({
         if (leftLeg.current) leftLeg.current.rotation.x = 0
         if (rightLeg.current) rightLeg.current.rotation.x = 0
 
-        if (motionState.current === 'walking' || motionState.current === 'carrying' || motionState.current === 'panic') {
-            const swing = Math.sin(t * (motionState.current === 'panic' ? 8 : 5)) * (motionState.current === 'carrying' ? 0.25 : motionState.current === 'panic' ? 0.9 : 0.6)
+        if (
+            motionState.current === 'walking' ||
+            motionState.current === 'carrying' ||
+            motionState.current === 'panic' ||
+            motionState.current === 'response'
+        ) {
+            const frequency = motionState.current === 'panic' ? 8 : motionState.current === 'response' ? 6.4 : 5
+            const amplitude =
+                motionState.current === 'carrying'
+                    ? 0.25
+                    : motionState.current === 'panic'
+                        ? 0.9
+                        : motionState.current === 'response'
+                            ? 0.72
+                            : 0.6
+            const swing = Math.sin(t * frequency) * amplitude
             if (leftArm.current) leftArm.current.rotation.x = swing
             if (rightArm.current) rightArm.current.rotation.x = -swing
-            if (leftLeg.current) leftLeg.current.rotation.x = -swing * (motionState.current === 'panic' ? 1.05 : 0.8)
-            if (rightLeg.current) rightLeg.current.rotation.x = swing * (motionState.current === 'panic' ? 1.05 : 0.8)
-            if (bodyBob.current) bodyBob.current.position.y = Math.abs(Math.sin(t * (motionState.current === 'panic' ? 8 : 5))) * (motionState.current === 'panic' ? 0.08 : 0.05)
+            if (leftLeg.current) leftLeg.current.rotation.x = -swing * (motionState.current === 'panic' ? 1.05 : motionState.current === 'response' ? 0.92 : 0.8)
+            if (rightLeg.current) rightLeg.current.rotation.x = swing * (motionState.current === 'panic' ? 1.05 : motionState.current === 'response' ? 0.92 : 0.8)
+            if (bodyBob.current) bodyBob.current.position.y = Math.abs(Math.sin(t * frequency)) * (motionState.current === 'panic' ? 0.08 : 0.05)
         } else if (taskType === 'lift') {
             const heave = Math.sin(t * 3.4) * 0.45
             if (leftArm.current) leftArm.current.rotation.x = -1.1 + heave * 0.4
@@ -603,7 +745,7 @@ export default function Worker({
         }
 
         if (carriedLoad.current) {
-            carriedLoad.current.visible = !panicActive && (taskType === 'carry' || taskType === 'lift')
+            carriedLoad.current.visible = incidentMode === 'none' && (taskType === 'carry' || taskType === 'lift')
             carriedLoad.current.position.y = taskType === 'lift' && motionState.current === 'working' ? 0.94 : 1.02
             carriedLoad.current.rotation.z = taskType === 'carry' ? Math.sin(t * 5) * 0.03 : 0
         }

@@ -250,22 +250,18 @@ function LadderFallIncident({ position, rotation = [0, 0, 0], trigger }) {
         elapsedRef.current += delta
         const t = elapsedRef.current
 
-        if (t >= 3) {
-            activeRef.current = false
-            workerRef.current.visible = false
-            rootRef.current.visible = false
-            return
-        }
-
         workerRef.current.visible = true
         if (t < 1.8) {
             const progress = t / 1.8
             workerRef.current.position.set(0, 0.28 + progress * 2.5, 0.16)
             workerRef.current.rotation.set(0, 0, 0)
-        } else {
+        } else if (t < 3) {
             const fall = easeOutQuad((t - 1.8) / 1.2)
             workerRef.current.position.set(0.18 + fall * 1.15, 2.78 - fall * 2.28, 0.22)
             workerRef.current.rotation.set(0, 0, -fall * 1.55)
+        } else {
+            workerRef.current.position.set(1.33, 0.5, 0.22)
+            workerRef.current.rotation.set(0, 0.12, -1.55)
         }
     })
 
