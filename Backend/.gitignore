@@ -1,0 +1,8 @@
+.DS_Store
+.mplconfig/
+.torch/
+__pycache__/
+*.py[cod]
+outputs/
+tmp/
+venv/
