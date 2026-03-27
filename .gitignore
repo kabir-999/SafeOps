@@ -1,17 +1,27 @@
-frontend/node_modules
-/Users/kabirmathur/Documents/warehouse_env/node_modules
-/Users/kabirmathur/Documents/warehouse_env/node_modules
-electron
-frontend/node_modules
-node_modules
-Backend/venv
-Backend/__pycache__
-Backend/.mplconfig
-Backend/.torch
-Backend/outputs
-Backend/tmp
-__pycache__
-.vscode
-outputs
-frontend/Screen Recording 2026-03-26 at 8.54.04 AM.mov
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+dist/
+frontend/dist/
+
+# Python
+Backend/venv/
+Backend/__pycache__/
+Backend/.mplconfig/
+Backend/.torch/
+Backend/outputs/
+Backend/tmp/
+__pycache__/
+
+# IDE
+.vscode/
+
+# Large files and temp
+outputs/
+frontend/Screen Recording 2026-03-26 at 8.54.04 AM.mov
 frontend/temp.mov
+
+# OS
+.DS_Store
