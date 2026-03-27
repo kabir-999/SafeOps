@@ -29,3 +29,34 @@ frontend/temp.mov
 
 # OS
 .DS_Store
+# env
+.env
+
+# node
+node_modules/
+frontend/node_modules/
+
+# build
+dist/
+
+# python
+__pycache__/
+*.pyc
+
+# logs
+*.log
+
+# mac
+.DS_Store
+
+# ML models
+*.pt
+*.pth
+
+# outputs
+runs/
+outputs/
+
+# media
+*.mov
+*.mp4
