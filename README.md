@@ -1,4 +1,4 @@
-# 🦺 SafeOps AI — PPE Compliance Monitoring System
+# SafeOps AI — PPE Compliance Monitoring System
 
 > Real-time PPE compliance monitoring for industrial environments using computer vision, 3D simulation, and automated emergency response.
 
@@ -6,7 +6,7 @@ Built at **HackNiche 2025** · Problem Statement PS2
 
 ---
 
-## 📌 Overview
+## Overview
 
 SafeOps AI is a web-based safety management platform for factories, recycling plants, and industrial facilities. It uses a YOLOv11-based computer vision model to detect whether workers are wearing required Personal Protective Equipment (PPE) in real time — and surfaces everything through a live supervisor dashboard, a 3D factory simulation, and an automated emergency alert system.
 
