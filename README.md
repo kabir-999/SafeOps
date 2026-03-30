@@ -199,7 +199,7 @@ Persistent spatial heatmaps showing which areas of the factory floor have the hi
 
 ## Team
 
-Built at HackNiche 2025
+Built at HackNiche 2026
 
 - **Kabir Mathur** - CV Model, Backend, Three.js Setup · [@kabir-999](https://github.com/kabir-999)
 - **Aagnya Mistry** - Flutter Mobile App, n8n Workflow · [@Aagnya-Mistry](https://github.com/Aagnya-Mistry)
